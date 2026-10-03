@@ -1,8 +1,8 @@
 "use client";
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { ArrowRight, ChipGroup, DownloadIcon, ErrorNote, Eyebrow, PrimaryButton } from "@/components/launch/ui";
-import type { Shot } from "@/components/launch/options";
+import { ArrowRight, ChipGroup, DownloadIcon, ErrorNote, Eyebrow, PresetPicker, PrimaryButton } from "@/components/launch/ui";
+import { SAMPLE_PRODUCT, type Shot } from "@/components/launch/options";
 import { readImage } from "@/components/launch/read-image";
 
 const SLOTS = [
@@ -34,6 +34,62 @@ const MODELS = [
 type ShotStyle = keyof typeof SHOTS;
 type Setting = keyof typeof SETTINGS;
 
+// {p} = product name, {d} = what it does. The angle steers "Write it for me".
+const PRESETS = [
+  {
+    id: "launch-day",
+    label: "Launch day",
+    shot: "selfie",
+    setting: "outdoors",
+    aspectRatio: "9:16",
+    angle: "announcing that the product launches today and inviting people to try it",
+    template: "Today we're launching {p} — {d}. It's live right now, so go try it and tell me what you think.",
+  },
+  {
+    id: "origin",
+    label: "Why I built it",
+    shot: "interview",
+    setting: "office",
+    aspectRatio: "16:9",
+    angle: "the personal frustration that made them build the product",
+    template: "I built {p} because I needed {d} and nothing out there felt right. So we made it ourselves.",
+  },
+  {
+    id: "podcast",
+    label: "Podcast clip",
+    shot: "podcast",
+    setting: "studio",
+    aspectRatio: "9:16",
+    angle: "a bold, quotable opinion about the problem the product solves",
+    template: "Here's what nobody tells you: {d} shouldn't be this hard. That's exactly why we built {p}.",
+  },
+  {
+    id: "coffee-chat",
+    label: "Coffee chat",
+    shot: "selfie",
+    setting: "cafe",
+    aspectRatio: "9:16",
+    angle: "casually telling a friend how the product makes their day easier",
+    template: "Honestly? {p} is the tool I wish I'd had years ago — {d}, without the headache.",
+  },
+  {
+    id: "thank-you",
+    label: "Thank-you note",
+    shot: "interview",
+    setting: "studio",
+    aspectRatio: "16:9",
+    angle: "thanking early users and teasing what is coming next",
+    template: "To everyone using {p}: thank you. You told us what you needed, and the next update is all yours.",
+  },
+] as const satisfies readonly { id: string; label: string; shot: ShotStyle; setting: Setting; aspectRatio: "16:9" | "9:16"; angle: string; template: string }[];
+
+type Preset = (typeof PRESETS)[number];
+
+function fillTemplate(preset: Preset, productName: string, description: string) {
+  const d = description.trim().replace(/\.$/, "");
+  return preset.template.replace("{p}", productName.trim()).replace("{d}", d.charAt(0).toLowerCase() + d.slice(1));
+}
+
 type Status =
   | { state: "idle" }
   | { state: "starting" }
@@ -48,17 +104,18 @@ const field =
   "w-full rounded-[10px] border border-edge bg-white px-4 text-base text-ink outline-none transition-shadow placeholder:text-dash focus:border-ink focus:shadow-[0_0_0_0.5px_#0E0E0E]";
 
 export default function FounderPage() {
-  const [founder, setFounder] = useState("");
-  const [productName, setProductName] = useState("");
-  const [description, setDescription] = useState("");
-  const [line, setLine] = useState("");
+  const [founder, setFounder] = useState(SAMPLE_PRODUCT.founder);
+  const [productName, setProductName] = useState(SAMPLE_PRODUCT.productName);
+  const [description, setDescription] = useState(SAMPLE_PRODUCT.shortDescription);
+  const [line, setLine] = useState(() => fillTemplate(PRESETS[0], SAMPLE_PRODUCT.productName, SAMPLE_PRODUCT.shortDescription));
   const [refs, setRefs] = useState<Partial<Record<SlotKey, Shot>>>({});
-  const [shot, setShot] = useState<ShotStyle>("selfie");
-  const [setting, setSetting] = useState<Setting>("office");
-  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("9:16");
+  const [shot, setShot] = useState<ShotStyle>(PRESETS[0].shot);
+  const [setting, setSetting] = useState<Setting>(PRESETS[0].setting);
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">(PRESETS[0].aspectRatio);
   const [resolution, setResolution] = useState<"720p" | "1080p">("720p");
   const [model, setModel] = useState<(typeof MODELS)[number]["value"]>(MODELS[0].value);
   const [customPrompt, setCustomPrompt] = useState<string | null>(null);
+  const [presetId, setPresetId] = useState<Preset["id"] | null>(PRESETS[0].id);
   const [writing, setWriting] = useState(false);
   const [scriptError, setScriptError] = useState("");
   const [status, setStatus] = useState<Status>({ state: "idle" });
@@ -69,6 +126,18 @@ export default function FounderPage() {
   const words = line.trim() ? line.trim().split(/\s+/).length : 0;
   const prompt = customPrompt ?? buildPrompt();
   const ready = !!refs.founder && !!line.trim() && !!productName.trim();
+  const preset = PRESETS.find((p) => p.id === presetId && p.shot === shot && p.setting === setting && p.aspectRatio === aspectRatio);
+
+  function applyPreset(id: string) {
+    const next = PRESETS.find((p) => p.id === id)!;
+    setPresetId(next.id);
+    setShot(next.shot);
+    setSetting(next.setting);
+    setAspectRatio(next.aspectRatio);
+    // Only fill the line when it's empty or still an untouched starter from another preset.
+    const untouched = !line.trim() || PRESETS.some((p) => fillTemplate(p, productName, description) === line);
+    if (untouched && productName.trim() && description.trim()) setLine(fillTemplate(next, productName, description));
+  }
 
   function buildPrompt() {
     const who = founder.trim() ? `${founder.trim()}, the founder of ${productName.trim() || "the product"}` : "the founder";
@@ -120,7 +189,7 @@ export default function FounderPage() {
       const res = await fetch("/api/founder/script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ founder, productName, description, shot: SHOTS[shot].label }),
+        body: JSON.stringify({ founder, productName, description, shot: SHOTS[shot].label, angle: preset?.angle }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -281,6 +350,12 @@ export default function FounderPage() {
               </div>
             )}
           </div>
+
+          <PresetPicker
+            presets={PRESETS.map((p) => ({ id: p.id, label: p.label, meta: `${SHOTS[p.shot].label} · ${p.aspectRatio}` }))}
+            activeId={preset?.id}
+            onSelect={applyPreset}
+          />
 
           <div className="flex flex-col gap-3.5">
             <div className="flex items-baseline justify-between gap-4">

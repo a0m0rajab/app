@@ -4,8 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const links = [
-  { href: "/", label: "Chat" },
-  { href: "/video", label: "Video" },
   { href: "/launch", label: "Launch" },
   { href: "/founder", label: "Founder" },
 ];
@@ -16,7 +14,7 @@ export function Nav() {
   return (
     <nav className="w-full shrink-0 border-b border-line font-display dark:border-white/10">
       <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between px-4 py-4 sm:px-14 sm:py-6">
-        <Link href="/" className="flex items-center gap-2.5">
+        <Link href="/launch" className="flex items-center gap-2.5">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sun">
             <svg width="12" height="14" viewBox="0 0 12 14" aria-hidden>
               <path d="M1 1 L11 7 L1 13 Z" fill="#0E0E0E" />

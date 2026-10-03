@@ -3,7 +3,7 @@ import { ai } from "@/lib/gemini";
 
 const model = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
 
-type ScriptRequest = { founder?: string; productName?: string; description?: string; shot?: string };
+type ScriptRequest = { founder?: string; productName?: string; description?: string; shot?: string; angle?: string };
 
 // Draft the line a founder says to camera in an 8 second Veo clip.
 export async function POST(request: Request) {
@@ -18,6 +18,7 @@ export async function POST(request: Request) {
 Founder: ${body.founder?.trim() || "the founder"}
 Product: ${productName}
 What it does: ${description}
+${body.angle?.trim() ? `Angle: ${body.angle.trim().slice(0, 200)}` : ""}
 
 Rules: first person, conversational and genuine, no hype words, 14-20 words so it fits in 8 seconds when spoken. Mention ${productName} by name.`;
 

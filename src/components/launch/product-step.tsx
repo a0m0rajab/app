@@ -1,8 +1,8 @@
 "use client";
 
 import { type DragEvent, type FormEvent, useRef, useState } from "react";
-import { ArrowRight, ArrowUp, ChipGroup, ErrorNote, Eyebrow, PrimaryButton } from "./ui";
-import { FORMATS, LENGTHS, MAX_SHOTS, TONES, type Format, type LaunchOptions, type Shot } from "./options";
+import { ArrowRight, ArrowUp, ChipGroup, ErrorNote, Eyebrow, PresetPicker, PrimaryButton } from "./ui";
+import { FORMATS, LAUNCH_PRESETS, LENGTHS, MAX_SHOTS, TONES, type Format, type LaunchOptions, type Shot } from "./options";
 import { readImage } from "./read-image";
 
 const field =
@@ -55,6 +55,9 @@ export function ProductStep(p: Props) {
   }
 
   const scenes = p.shots.length || 3;
+  const activePreset = LAUNCH_PRESETS.find(
+    (x) => x.seconds === p.options.seconds && x.format === p.options.format && x.tone === p.options.tone,
+  );
 
   return (
     <form
@@ -94,6 +97,14 @@ export function ProductStep(p: Props) {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <PresetPicker
+          presets={LAUNCH_PRESETS.map((x) => ({ ...x, meta: `${x.seconds}s · ${FORMATS[x.format].short} · ${x.tone}` }))}
+          activeId={activePreset?.id}
+          onSelect={(id) => {
+            const { seconds, format, tone } = LAUNCH_PRESETS.find((x) => x.id === id)!;
+            p.onOptions({ seconds, format, tone });
+          }}
+        />
         <button
           type="button"
           disabled={full}

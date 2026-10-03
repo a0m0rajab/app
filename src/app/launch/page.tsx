@@ -3,19 +3,19 @@
 import { useMemo, useState } from "react";
 import { ProductStep } from "@/components/launch/product-step";
 import { PreviewStep } from "@/components/launch/preview-step";
-import type { LaunchOptions, Shot } from "@/components/launch/options";
+import { SAMPLE_PRODUCT, type LaunchOptions, type Shot } from "@/components/launch/options";
 import { SAMPLE_STORYBOARD, type Feature, type Storyboard } from "@/remotion/types";
 
 export default function LaunchPage() {
   const [step, setStep] = useState<"product" | "preview">("product");
-  const [productName, setProductName] = useState("");
-  const [description, setDescription] = useState("");
+  const [productName, setProductName] = useState(SAMPLE_PRODUCT.productName);
+  const [description, setDescription] = useState(SAMPLE_PRODUCT.description);
   const [shots, setShots] = useState<Shot[]>([]);
   const [options, setOptions] = useState<LaunchOptions>({
     seconds: 30,
     format: "landscape",
     tone: "punchy",
-    brandColor: SAMPLE_STORYBOARD.brandColor,
+    brandColor: SAMPLE_PRODUCT.brandColor,
   });
   const [base, setBase] = useState<Storyboard>(SAMPLE_STORYBOARD);
   const [generating, setGenerating] = useState(false);

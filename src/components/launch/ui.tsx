@@ -93,3 +93,36 @@ export const DownloadIcon = () => (
     <path d="M5 20h14" {...stroke} />
   </svg>
 );
+
+export type Preset = { id: string; label: string; meta: string };
+
+// One-click bundles of settings, shown as a row of cards.
+export function PresetPicker({ presets, activeId, onSelect }: { presets: readonly Preset[]; activeId?: string; onSelect: (id: string) => void }) {
+  return (
+    <div className="flex flex-col gap-3.5">
+      <div className="flex items-baseline justify-between gap-4">
+        <Eyebrow>Presets</Eyebrow>
+        <span className="text-[13px]/4 text-muted">One click sets everything below</span>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {presets.map((p) => {
+          const active = p.id === activeId;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onSelect(p.id)}
+              aria-pressed={active}
+              className={`flex min-w-36 flex-1 flex-col gap-1.5 rounded-[10px] p-3 text-left transition-colors ${
+                active ? "border-[1.5px] border-ink bg-sun" : "border border-line bg-paper hover:border-ink"
+              }`}
+            >
+              <span className="text-sm/4.5 font-bold">{p.label}</span>
+              <span className={`font-mono text-xs/4 ${active ? "text-ink" : "text-muted"}`}>{p.meta}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
