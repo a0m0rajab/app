@@ -13,39 +13,64 @@ const CTA = 105;
 
 const FONT = "var(--font-geist-sans), Inter, Arial, sans-serif";
 
-export function launchDuration(storyboard: Storyboard) {
-  return INTRO + PROBLEM + storyboard.features.length * FEATURE + STATS + CTA;
+export type TimelineScene = { key: string; label: string; from: number; duration: number };
+
+// Scene timings, optionally stretched or squeezed to hit a target length in seconds.
+export function launchTimeline(storyboard: Storyboard, seconds?: number): TimelineScene[] {
+  const natural = INTRO + PROBLEM + storyboard.features.length * FEATURE + STATS + CTA;
+  const scale = seconds ? (seconds * FPS) / natural : 1;
+  const parts: [string, string, number][] = [
+    ["hook", "Hook", INTRO],
+    ["problem", "Problem", PROBLEM],
+    ...storyboard.features.map((f, i): [string, string, number] => [`feature-${i}`, f.title, FEATURE]),
+    ["stats", "Proof", STATS],
+    ["cta", storyboard.cta, CTA],
+  ];
+  let from = 0;
+  return parts.map(([key, label, frames]) => {
+    const duration = Math.round(frames * scale);
+    const scene = { key, label, from, duration };
+    from += duration;
+    return scene;
+  });
 }
 
-export function LaunchVideo({ storyboard: s }: LaunchVideoProps) {
+export function launchDuration(storyboard: Storyboard, seconds?: number) {
+  const last = launchTimeline(storyboard, seconds).at(-1)!;
+  return last.from + last.duration;
+}
+
+export function LaunchVideo({ storyboard: s, seconds }: LaunchVideoProps) {
+  const timeline = launchTimeline(s, seconds);
+  const frames = (key: string) => timeline.find((t) => t.key === key)!.duration;
   return (
     <AbsoluteFill style={{ background: "#0a0a12", color: "#ffffff", fontFamily: FONT }}>
       <Backdrop color={s.brandColor} />
       <Series>
-        <Series.Sequence durationInFrames={INTRO}>
-          <Scene duration={INTRO}>
+        <Series.Sequence durationInFrames={frames("hook")}>
+          <Scene duration={frames("hook")}>
             <Intro storyboard={s} />
           </Scene>
         </Series.Sequence>
-        <Series.Sequence durationInFrames={PROBLEM}>
-          <Scene duration={PROBLEM}>
+        <Series.Sequence durationInFrames={frames("problem")}>
+          <Scene duration={frames("problem")}>
             <Problem text={s.problem} />
           </Scene>
         </Series.Sequence>
         {s.features.map((feature, i) => (
-          <Series.Sequence key={i} durationInFrames={FEATURE}>
-            <Scene duration={FEATURE}>
+          <Series.Sequence key={i} durationInFrames={frames(`feature-${i}`)}>
+            <Scene duration={frames(`feature-${i}`)}>
               <FeatureScene feature={feature} index={i} storyboard={s} />
             </Scene>
           </Series.Sequence>
         ))}
-        <Series.Sequence durationInFrames={STATS}>
-          <Scene duration={STATS}>
+        <Series.Sequence durationInFrames={frames("stats")}>
+          <Scene duration={frames("stats")}>
             <Stats storyboard={s} />
           </Scene>
         </Series.Sequence>
-        <Series.Sequence durationInFrames={CTA}>
-          <Scene duration={CTA} fadeOut={false}>
+        <Series.Sequence durationInFrames={frames("cta")}>
+          <Scene duration={frames("cta")} fadeOut={false}>
             <Cta storyboard={s} />
           </Scene>
         </Series.Sequence>

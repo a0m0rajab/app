@@ -1,4 +1,4 @@
-import { Type, type Schema } from "@google/genai";
+import { Type, type Part, type Schema } from "@google/genai";
 import { ai } from "@/lib/gemini";
 import type { Storyboard } from "@/remotion/types";
 
@@ -6,7 +6,7 @@ const model = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
 
 const str = (description: string): Schema => ({ type: Type.STRING, description });
 
-const storyboardSchema: Schema = {
+const storyboardSchema = (sceneCount: number): Schema => ({
   type: Type.OBJECT,
   properties: {
     tagline: str("Punchy one-sentence value proposition, max 12 words"),
@@ -14,8 +14,8 @@ const storyboardSchema: Schema = {
     navItems: { type: Type.ARRAY, items: { type: Type.STRING }, minItems: "5", maxItems: "5", description: "Sidebar nav labels for the app, 1-2 words each" },
     features: {
       type: Type.ARRAY,
-      minItems: "3",
-      maxItems: "3",
+      minItems: String(sceneCount),
+      maxItems: String(sceneCount),
       items: {
         type: Type.OBJECT,
         properties: {
@@ -73,13 +73,25 @@ const storyboardSchema: Schema = {
     url: str("Plausible product domain without https://"),
   },
   required: ["tagline", "problem", "navItems", "features", "stats", "cta", "url"],
-};
+});
+
+const TONES = {
+  punchy: "Short, bold, high-energy lines.",
+  calm: "Warm, reassuring and unhurried.",
+  playful: "Witty and light-hearted, with a wink of humour.",
+} as const;
+
+const MAX_SCENES = 6;
+const DATA_URL = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/;
 
 type LaunchRequest = {
   productName: string;
   description: string;
   audience?: string;
   brandColor?: string;
+  tone?: keyof typeof TONES;
+  // Screenshot data URLs, in scene order. Each one becomes a feature scene.
+  screenshots?: string[];
 };
 
 export async function POST(request: Request) {
@@ -90,18 +102,27 @@ export async function POST(request: Request) {
     return Response.json({ error: "Product name and description are required" }, { status: 400 });
   }
 
-  const prompt = `You are a product marketer writing a 20-second SaaS launch video.
+  const images = (body.screenshots ?? []).slice(0, MAX_SCENES).flatMap((url): Part[] => {
+    const match = DATA_URL.exec(url);
+    return match ? [{ inlineData: { mimeType: match[1], data: match[2] } }] : [];
+  });
+  const sceneCount = images.length || 3;
+  const tone = body.tone && Object.hasOwn(TONES, body.tone) ? TONES[body.tone] : TONES.punchy;
+
+  const prompt = `You are a product marketer writing a short SaaS launch video.
 Product name: ${productName}
 What it does: ${description}
 ${body.audience?.trim() ? `Target audience: ${body.audience.trim()}` : ""}
+Tone: ${tone}
 
-Write concise, energetic copy and design three mock app screens that showcase the product's key features with realistic, specific data.`;
+Write concise copy and design ${sceneCount} mock app screens that showcase the product's key features with realistic, specific data.
+${images.length ? `The ${images.length} attached screenshots are the real product, in scene order. Feature N must describe what screenshot N shows.` : ""}`;
 
   try {
     const res = await ai.models.generateContent({
       model,
-      contents: prompt,
-      config: { responseMimeType: "application/json", responseSchema: storyboardSchema },
+      contents: [{ role: "user", parts: [{ text: prompt }, ...images] }],
+      config: { responseMimeType: "application/json", responseSchema: storyboardSchema(sceneCount) },
     });
     const generated = JSON.parse(res.text ?? "{}") as Omit<Storyboard, "productName" | "brandColor">;
 
@@ -111,7 +132,7 @@ Write concise, energetic copy and design three mock app screens that showcase th
       brandColor: /^#[0-9a-f]{6}$/i.test(body.brandColor ?? "") ? body.brandColor! : "#6366f1",
       navItems: generated.navItems.slice(0, 5),
       stats: generated.stats.slice(0, 3),
-      features: generated.features.slice(0, 3).map((f) => ({
+      features: generated.features.slice(0, sceneCount).map((f) => ({
         ...f,
         screen: { ...f.screen, metrics: f.screen.metrics.slice(0, 3), chart: f.screen.chart.slice(0, 7), rows: f.screen.rows.slice(0, 4) },
       })),

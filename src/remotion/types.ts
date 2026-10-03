@@ -30,6 +30,8 @@ export type Storyboard = {
 
 export type LaunchVideoProps = {
   storyboard: Storyboard;
+  // Target length in seconds; scenes are scaled to fit. Defaults to the natural pacing.
+  seconds?: number;
 };
 
 export const SAMPLE_STORYBOARD: Storyboard = {

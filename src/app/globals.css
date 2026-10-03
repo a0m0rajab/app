@@ -10,6 +10,19 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-inter-tight);
+
+  /* Launch flow palette, from the Paper design */
+  --color-ink: #0e0e0e;
+  --color-sun: #ffd400;
+  --color-sun-soft: #ffe866;
+  --color-muted: #6b6b6b;
+  --color-body: #4a4a4a;
+  --color-line: #e2e2e0;
+  --color-edge: #d4d4d2;
+  --color-paper: #f2f2f0;
+  --color-dash: #bdbdba;
+  --color-go: #1f9d55;
 }
 
 @media (prefers-color-scheme: dark) {
