@@ -6,13 +6,14 @@ import { usePathname } from "next/navigation";
 const links = [
   { href: "/", label: "Chat" },
   { href: "/video", label: "Video" },
+  { href: "/launch", label: "Launch" },
 ];
 
 export function Nav() {
   const pathname = usePathname();
 
   return (
-    <nav className="mx-auto flex w-full max-w-3xl items-center gap-1 border-b border-black/10 px-4 py-3 dark:border-white/10">
+    <nav className="mx-auto flex w-full max-w-6xl items-center gap-1 border-b border-black/10 px-4 py-3 dark:border-white/10">
       <span className="mr-4 font-semibold">Gemini Studio</span>
       {links.map((link) => (
         <Link
