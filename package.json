@@ -9,9 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/genai": "^2.27.0",
+    "@remotion/player": "4.0.532",
+    "@remotion/web-renderer": "4.0.532",
     "next": "16.3.8",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "remotion": "4.0.532"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
