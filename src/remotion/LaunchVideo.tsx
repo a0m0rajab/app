@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { AbsoluteFill, Img, Series, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { Audio } from "@remotion/media";
+import { AbsoluteFill, Img, Sequence, Series, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { AppScreen, countUp } from "./AppScreen";
 import type { Feature, LaunchVideoProps, Storyboard } from "./types";
 
@@ -40,12 +41,13 @@ export function launchDuration(storyboard: Storyboard, seconds?: number) {
   return last.from + last.duration;
 }
 
-export function LaunchVideo({ storyboard: s, seconds }: LaunchVideoProps) {
+export function LaunchVideo({ storyboard: s, seconds, audio }: LaunchVideoProps) {
   const timeline = launchTimeline(s, seconds);
   const frames = (key: string) => timeline.find((t) => t.key === key)!.duration;
   return (
     <AbsoluteFill style={{ background: "#0a0a12", color: "#ffffff", fontFamily: FONT }}>
       <Backdrop color={s.brandColor} />
+      <Soundtrack music={audio?.music} voiceover={audio?.voiceover} />
       <Series>
         <Series.Sequence durationInFrames={frames("hook")}>
           <Scene duration={frames("hook")}>
@@ -76,6 +78,29 @@ export function LaunchVideo({ storyboard: s, seconds }: LaunchVideoProps) {
         </Series.Sequence>
       </Series>
     </AbsoluteFill>
+  );
+}
+
+const VOICE_DELAY = 12;
+
+// Music bed ducks under the voiceover and fades out with the final scene.
+function Soundtrack({ music, voiceover }: { music?: string; voiceover?: string }) {
+  const { durationInFrames, fps } = useVideoConfig();
+  const level = voiceover ? 0.22 : 0.6;
+  const musicVolume = (f: number) =>
+    interpolate(f, [0, fps * 0.5, durationInFrames - fps * 1.5, durationInFrames], [0, level, level, 0], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    });
+  return (
+    <>
+      {music && <Audio src={music} loop loopVolumeCurveBehavior="extend" volume={musicVolume} />}
+      {voiceover && (
+        <Sequence from={VOICE_DELAY} layout="none">
+          <Audio src={voiceover} />
+        </Sequence>
+      )}
+    </>
   );
 }
 

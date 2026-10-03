@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowRight, ChipGroup, DownloadIcon, ErrorNote, Eyebrow, PresetPicker, PrimaryButton } from "@/components/launch/ui";
 import { SAMPLE_PRODUCT, type Shot } from "@/components/launch/options";
 import { readImage } from "@/components/launch/read-image";
+import { buildFounderPrompt, FOUNDER_NEGATIVE_PROMPT, SETTINGS, SHOTS, type Setting, type ShotStyle } from "@/lib/founder";
 
 const SLOTS = [
   { key: "founder", label: "You", hint: "A clear, front-facing photo", required: true },
@@ -13,26 +14,10 @@ const SLOTS = [
 
 type SlotKey = (typeof SLOTS)[number]["key"];
 
-const SHOTS = {
-  selfie: { label: "Selfie vlog", text: "handheld selfie-style vlog shot, the founder holding the phone at arm's length" },
-  interview: { label: "Interview", text: "seated interview shot on a tripod, framed from the chest up, slightly off-centre" },
-  podcast: { label: "Podcast", text: "podcast-style shot, the founder speaking into a studio microphone" },
-} as const;
-
-const SETTINGS = {
-  office: { label: "Office", text: "in a bright, modern startup office with plants and laptops in the soft-focus background" },
-  cafe: { label: "Café", text: "in a cosy café with warm window light and gentle background chatter" },
-  outdoors: { label: "Outdoors", text: "walking down a sunny city street, golden hour light" },
-  studio: { label: "Studio", text: "in a clean studio with a soft seamless backdrop and professional lighting" },
-} as const;
-
 const MODELS = [
   { value: "veo-3.1-fast-generate-preview", label: "Veo 3.1 Fast" },
   { value: "veo-3.1-generate-preview", label: "Veo 3.1" },
 ] as const;
-
-type ShotStyle = keyof typeof SHOTS;
-type Setting = keyof typeof SETTINGS;
 
 // {p} = product name, {d} = what it does. The angle steers "Write it for me".
 const PRESETS = [
@@ -140,17 +125,7 @@ export default function FounderPage() {
   }
 
   function buildPrompt() {
-    const who = founder.trim() ? `${founder.trim()}, the founder of ${productName.trim() || "the product"}` : "the founder";
-    return [
-      `A ${SHOTS[shot].text}, ${SETTINGS[setting].text}.`,
-      `The person is ${who}, exactly as shown in the reference photo.`,
-      refs.product && `The product from the reference image is visible in the scene, held up or on a nearby screen.`,
-      refs.place && `The look and surroundings match the reference image of the space.`,
-      line.trim() && `Looking into the camera, they say warmly and confidently: "${line.trim()}"`,
-      "Authentic, natural lighting, shallow depth of field, real-world audio. No subtitles, captions or on-screen text.",
-    ]
-      .filter(Boolean)
-      .join(" ");
+    return buildFounderPrompt({ founder, productName, line, shot, setting, hasProduct: !!refs.product, hasPlace: !!refs.place });
   }
 
   useEffect(() => {
@@ -214,7 +189,7 @@ export default function FounderPage() {
       const res = await fetch("/api/video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, model, aspectRatio, resolution, referenceImages, negativePrompt: "subtitles, captions, text overlays, watermark, distorted face" }),
+        body: JSON.stringify({ prompt, model, aspectRatio, resolution, referenceImages, negativePrompt: FOUNDER_NEGATIVE_PROMPT }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);

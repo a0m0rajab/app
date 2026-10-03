@@ -3,15 +3,27 @@
 import { Player, type PlayerRef } from "@remotion/player";
 import { type ChangeEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { FPS, LaunchVideo, launchTimeline } from "@/remotion/LaunchVideo";
-import type { Feature, Storyboard } from "@/remotion/types";
+import type { Feature, LaunchVideoProps, Storyboard } from "@/remotion/types";
 import { DownloadIcon, ErrorNote, Eyebrow, PrimaryButton, SecondaryButton } from "./ui";
 import { FORMATS, type LaunchOptions } from "./options";
+
+type Audio = LaunchVideoProps["audio"];
 
 type RenderState =
   | { state: "idle" }
   | { state: "rendering"; progress: number }
-  | { state: "done"; url: string; storyboard: Storyboard; options: LaunchOptions }
+  | { state: "done"; url: string; storyboard: Storyboard; options: LaunchOptions; audio: Audio }
   | { state: "error"; message: string };
+
+export type Sound =
+  | { state: "idle" }
+  | { state: "generating" }
+  | { state: "ready"; voiceover?: string; music?: string; script?: string; warning?: string; key: string }
+  | { state: "error"; message: string };
+
+// Everything the voiceover reads, so edits to it flag the sound as out of date.
+export const soundKey = (s: Storyboard, seconds: number) =>
+  JSON.stringify([seconds, s.productName, s.tagline, s.problem, s.features.map((f) => [f.title, f.description]), s.stats, s.cta, s.url]);
 
 type Props = {
   storyboard: Storyboard;
@@ -23,6 +35,11 @@ type Props = {
   onUpdateFeature: (index: number, patch: Partial<Feature>) => void;
   onRegenerate: () => void;
   onBack: () => void;
+  audio: Audio;
+  sound: Sound;
+  mix: { voiceover: boolean; music: boolean };
+  onMix: (patch: Partial<{ voiceover: boolean; music: boolean }>) => void;
+  onGenerateSound: () => void;
 };
 
 const field =
@@ -35,14 +52,15 @@ const clock = (frame: number) => {
 
 const slug = (name: string) => name.toLowerCase().replace(/\W+/g, "-");
 
-export function PreviewStep({ storyboard, options, error, generating, onOptions, onUpdate, onUpdateFeature, onRegenerate, onBack }: Props) {
+export function PreviewStep(props: Props) {
+  const { storyboard, options, error, generating, onOptions, onUpdate, onUpdateFeature, onRegenerate, onBack, audio } = props;
   const player = useRef<PlayerRef>(null);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [selected, setSelected] = useState("hook");
   const [renderState, setRender] = useState<RenderState>({ state: "idle" });
   // Any edit after a render makes the finished file stale.
-  const stale = renderState.state === "done" && (renderState.storyboard !== storyboard || renderState.options !== options);
+  const stale = renderState.state === "done" && (renderState.storyboard !== storyboard || renderState.options !== options || renderState.audio !== audio);
   const render: RenderState = stale ? { state: "idle" } : renderState;
   const abortRef = useRef<AbortController | null>(null);
 
@@ -106,7 +124,7 @@ export function PreviewStep({ storyboard, options, error, generating, onOptions,
     setRender({ state: "rendering", progress: 0 });
     try {
       const { renderMediaOnWeb } = await import("@remotion/web-renderer");
-      const props = { storyboard, seconds };
+      const props = { storyboard, seconds, audio };
       const { getBlob } = await renderMediaOnWeb({
         composition: { id: "launch-video", component: LaunchVideo, durationInFrames: total, fps: FPS, width: format.width, height: format.height, defaultProps: props },
         inputProps: props,
@@ -114,7 +132,7 @@ export function PreviewStep({ storyboard, options, error, generating, onOptions,
         onProgress: ({ progress }) => setRender({ state: "rendering", progress }),
       });
       const url = URL.createObjectURL(await getBlob());
-      setRender({ state: "done", url, storyboard, options });
+      setRender({ state: "done", url, storyboard, options, audio });
       download(url);
     } catch (err) {
       setRender(controller.signal.aborted ? { state: "idle" } : { state: "error", message: (err as Error).message });
@@ -139,7 +157,7 @@ export function PreviewStep({ storyboard, options, error, generating, onOptions,
           <Player
             ref={player}
             component={LaunchVideo}
-            inputProps={{ storyboard, seconds }}
+            inputProps={{ storyboard, seconds, audio }}
             durationInFrames={total}
             fps={FPS}
             compositionWidth={format.width}
@@ -281,6 +299,8 @@ export function PreviewStep({ storyboard, options, error, generating, onOptions,
           )}
         </div>
 
+        <SoundPanel {...props} busy={render.state === "rendering"} />
+
         <div className="flex flex-1 flex-col justify-end gap-3">
           {error && <ErrorNote>{error}</ErrorNote>}
           {render.state === "error" && <ErrorNote>{render.message}</ErrorNote>}
@@ -317,6 +337,59 @@ export function PreviewStep({ storyboard, options, error, generating, onOptions,
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SoundPanel({ sound, mix, onMix, onGenerateSound, storyboard, options, busy }: Props & { busy: boolean }) {
+  const stale = sound.state === "ready" && sound.key !== soundKey(storyboard, options.seconds);
+  const tracks = [
+    { key: "voiceover", label: "Voiceover", available: sound.state === "ready" && !!sound.voiceover },
+    { key: "music", label: "Music", available: sound.state === "ready" && !!sound.music },
+  ] as const;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-4">
+        <Eyebrow>Sound</Eyebrow>
+        <span className="text-[13px]/4 text-muted">Gemini TTS · Lyria 3</span>
+      </div>
+      {sound.state === "generating" ? (
+        <div className="flex items-center gap-2.5 rounded-[10px] bg-paper p-3 text-sm/5">
+          <span className="size-2 shrink-0 animate-pulse rounded-sm bg-sun" />
+          Writing the voiceover and scoring the music…
+        </div>
+      ) : sound.state === "ready" ? (
+        <>
+          <div className="flex gap-1.5">
+            {tracks.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="switch"
+                aria-checked={t.available && mix[t.key]}
+                disabled={!t.available || busy}
+                onClick={() => onMix({ [t.key]: !mix[t.key] })}
+                className={`flex-1 rounded-full px-3.5 py-2.25 text-sm/4.5 font-semibold transition-colors disabled:opacity-40 ${
+                  t.available && mix[t.key] ? "border border-ink bg-ink text-white" : "border border-edge hover:border-ink"
+                }`}
+              >
+                {t.label} {t.available && mix[t.key] ? "on" : "off"}
+              </button>
+            ))}
+          </div>
+          {sound.script && <p className="rounded-[10px] bg-paper p-3 text-sm/5 text-body italic">“{sound.script}”</p>}
+          {sound.warning && <ErrorNote>{sound.warning}</ErrorNote>}
+          {stale && <p className="text-[13px]/4 text-muted">The script or length changed — regenerate so the voiceover matches.</p>}
+        </>
+      ) : (
+        sound.state === "error" && <ErrorNote>{sound.message}</ErrorNote>
+      )}
+      {sound.state !== "generating" && (
+        <button type="button" onClick={onGenerateSound} disabled={busy} className="self-start text-sm/4.5 font-semibold underline underline-offset-3 hover:text-muted disabled:opacity-40">
+          {sound.state === "ready" ? "Regenerate sound" : "Generate voiceover & music"}
+        </button>
+      )}
     </div>
   );
 }

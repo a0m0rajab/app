@@ -32,6 +32,8 @@ export type LaunchVideoProps = {
   storyboard: Storyboard;
   // Target length in seconds; scenes are scaled to fit. Defaults to the natural pacing.
   seconds?: number;
+  // Object or data URLs for the generated voiceover and music bed.
+  audio?: { voiceover?: string; music?: string };
 };
 
 export const SAMPLE_STORYBOARD: Storyboard = {
