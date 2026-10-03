@@ -19,7 +19,7 @@ const interTight = Inter_Tight({
 });
 
 export const metadata: Metadata = {
-  title: "Gemini Studio",
+  title: "SupaFastLaunch",
   description: "Chat and generate videos with Gemini",
 };
 

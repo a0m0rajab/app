@@ -3,21 +3,10 @@
 import { type DragEvent, type FormEvent, useRef, useState } from "react";
 import { ArrowRight, ArrowUp, ChipGroup, ErrorNote, Eyebrow, PrimaryButton } from "./ui";
 import { FORMATS, LENGTHS, MAX_SHOTS, TONES, type Format, type LaunchOptions, type Shot } from "./options";
+import { readImage } from "./read-image";
 
 const field =
   "w-full rounded-[10px] border border-edge bg-white px-4 text-base text-ink outline-none transition-shadow placeholder:text-dash focus:border-ink focus:shadow-[0_0_0_0.5px_#0E0E0E]";
-
-// Downscale so screenshots stay light enough to send to Gemini and render into video.
-async function readShot(file: File): Promise<Shot> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 1600 / bitmap.width);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  return { id: crypto.randomUUID(), name: file.name, url: canvas.toDataURL("image/jpeg", 0.9) };
-}
 
 type Props = {
   productName: string;
@@ -42,7 +31,7 @@ export function ProductStep(p: Props) {
 
   async function addFiles(files: FileList | null) {
     const images = Array.from(files ?? []).filter((f) => /^image\/(png|jpeg|webp)$/.test(f.type));
-    const added = await Promise.all(images.slice(0, MAX_SHOTS - p.shots.length).map(readShot));
+    const added = await Promise.all(images.slice(0, MAX_SHOTS - p.shots.length).map(readImage));
     p.onShots([...p.shots, ...added]);
   }
 

@@ -1,4 +1,4 @@
-import { GenerateVideosOperation } from "@google/genai";
+import { GenerateVideosOperation, PersonGeneration, VideoGenerationReferenceType } from "@google/genai";
 import { ai, isOperationName, VIDEO_MODELS } from "@/lib/gemini";
 
 type StartRequest = {
@@ -9,7 +9,11 @@ type StartRequest = {
   durationSeconds?: 4 | 6 | 8;
   negativePrompt?: string;
   image?: { data: string; mimeType: string };
+  // Up to 3 "asset" images (people, products, places) to keep consistent in the clip. Veo 3.1 / 3.1 Fast only.
+  referenceImages?: { data: string; mimeType: string }[];
 };
+
+const REFERENCE_MODELS: readonly string[] = ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"];
 
 // Start a Veo generation job. Returns the operation name to poll.
 export async function POST(request: Request) {
@@ -19,16 +23,35 @@ export async function POST(request: Request) {
 
   const model = VIDEO_MODELS.includes(body.model!) ? body.model! : VIDEO_MODELS[0];
 
+  const references = (body.referenceImages ?? []).slice(0, 3);
+  if (references.length && !REFERENCE_MODELS.includes(model)) {
+    return Response.json({ error: "Reference images need Veo 3.1 or Veo 3.1 Fast" }, { status: 400 });
+  }
+
+  // Veo rejects negativePrompt alongside reference images, so fold it into the prompt there.
+  const negativePrompt = body.negativePrompt?.trim() || undefined;
+  const fullPrompt = references.length && negativePrompt ? `${prompt}\n\nAvoid: ${negativePrompt}.` : prompt;
+
   try {
     const operation = await ai.models.generateVideos({
       model,
-      prompt,
-      image: body.image ? { imageBytes: body.image.data, mimeType: body.image.mimeType } : undefined,
+      prompt: fullPrompt,
+      // Veo doesn't accept a starting frame alongside reference images.
+      image: body.image && !references.length ? { imageBytes: body.image.data, mimeType: body.image.mimeType } : undefined,
       config: {
         aspectRatio: body.aspectRatio,
         resolution: body.resolution,
-        durationSeconds: body.durationSeconds,
-        negativePrompt: body.negativePrompt?.trim() || undefined,
+        negativePrompt: references.length ? undefined : negativePrompt,
+        ...(references.length
+          ? {
+              durationSeconds: 8,
+              personGeneration: PersonGeneration.ALLOW_ADULT,
+              referenceImages: references.map((r) => ({
+                image: { imageBytes: r.data, mimeType: r.mimeType },
+                referenceType: VideoGenerationReferenceType.ASSET,
+              })),
+            }
+          : { durationSeconds: body.durationSeconds }),
       },
     });
     return Response.json({ name: operation.name });

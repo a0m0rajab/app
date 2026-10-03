@@ -7,6 +7,7 @@ const links = [
   { href: "/", label: "Chat" },
   { href: "/video", label: "Video" },
   { href: "/launch", label: "Launch" },
+  { href: "/founder", label: "Founder" },
 ];
 
 export function Nav() {
@@ -21,7 +22,7 @@ export function Nav() {
               <path d="M1 1 L11 7 L1 13 Z" fill="#0E0E0E" />
             </svg>
           </span>
-          <span className="text-xl/6 font-extrabold tracking-[-0.02em]">Gemini Studio</span>
+          <span className="text-xl/6 font-extrabold tracking-[-0.02em]">SupaFastLaunch</span>
         </Link>
         <div className="flex items-center gap-5 sm:gap-8">
           {links.map((link) => (
