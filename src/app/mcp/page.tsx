@@ -32,7 +32,7 @@ export default async function McpPage() {
               </span>
             </h1>
             <p className="text-[17px]/6.5 text-body">
-              Connect Claude, Codex or Cursor to SupaFastLaunch and let your agent write launch storyboards, score them with a Gemini
+              Connect Claude, Codex or Cursor to SupaFastLaunch and let your agent render finished launch videos with a Gemini
               voiceover and Lyria music, and shoot founder videos with Veo.
             </p>
           </div>
@@ -73,7 +73,7 @@ export default async function McpPage() {
           <div className="flex flex-col gap-2 rounded-2xl border border-edge p-4 sm:p-6">
             <span className="text-sm/4.5 font-semibold">Try it</span>
             <p className="text-sm/5 text-body">
-              “Make a 30 second punchy launch storyboard for Ledgerly, invoicing for freelancers, then generate the voiceover and music.”
+              “Render a 30 second punchy launch video for Ledgerly, invoicing for freelancers, as a 9:16 Reel with voiceover and music.”
             </p>
           </div>
         </div>

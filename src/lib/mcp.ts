@@ -5,11 +5,15 @@ import { buildFounderPrompt, FOUNDER_NEGATIVE_PROMPT, SETTINGS, SHOTS, type Sett
 import { writeFounderLine } from "@/lib/founder-script";
 import { generateStoryboard, TONES } from "@/lib/launch";
 import { generateLaunchAudio, VOICES } from "@/lib/launch-audio";
+import { getRenderJob, startRender } from "@/lib/render";
 import { getVideoStatus, startVideo } from "@/lib/video";
+import { FORMATS, type Format } from "@/components/launch/options";
 import type { Storyboard } from "@/remotion/types";
 
 // Tools agents can call. Each one wraps the same server code the app's API routes use.
 export const MCP_TOOLS = [
+  { name: "render_launch_video", summary: "Render the full launch video MP4 — script, voiceover and music — on the server." },
+  { name: "get_launch_video_status", summary: "Poll a launch video render and get the MP4 link when it's done." },
   { name: "create_launch_storyboard", summary: "Write the copy and mock app screens for a launch video." },
   { name: "generate_launch_audio", summary: "Voiceover (Gemini TTS) and music bed (Lyria 3) for a storyboard." },
   { name: "write_founder_line", summary: "Draft the 8-second line a founder says to camera." },
@@ -20,6 +24,7 @@ export const MCP_TOOLS = [
 const tones = Object.keys(TONES) as [keyof typeof TONES, ...(keyof typeof TONES)[]];
 const shots = Object.keys(SHOTS) as [ShotStyle, ...ShotStyle[]];
 const settings = Object.keys(SETTINGS) as [Setting, ...Setting[]];
+const formats = Object.keys(FORMATS) as [Format, ...Format[]];
 
 const json = (value: unknown) => ({ type: "text" as const, text: JSON.stringify(value, null, 2) });
 const fail = (message: string) => ({ content: [{ type: "text" as const, text: message }], isError: true });
@@ -62,7 +67,7 @@ export function createMcpServer(origin: string) {
       title: "Create launch video storyboard",
       description:
         "Writes the script and realistic mock app screens for a SaaS launch video (hook, problem, 3 feature scenes, proof stats, call to action). " +
-        `Pass the result to generate_launch_audio for sound. The video itself renders in the browser at ${origin}/launch.`,
+        "Use it to review or edit the copy, then pass it to render_launch_video for the MP4 or generate_launch_audio for sound only.",
       inputSchema: {
         productName: z.string().min(1),
         description: z.string().min(1).describe("What the product does, in a sentence or two"),
@@ -78,6 +83,67 @@ export function createMcpServer(origin: string) {
       } catch (err) {
         return fail((err as Error).message);
       }
+    },
+  );
+
+  server.registerTool(
+    "render_launch_video",
+    {
+      title: "Render launch video",
+      description:
+        "Renders a finished SaaS launch video MP4 on the server with Remotion: animated scenes, a Gemini TTS voiceover and a Lyria music bed. " +
+        "Pass a storyboard from create_launch_storyboard, or just productName + description and one is written for you. " +
+        "Runs in the background (about 1-3 minutes): poll get_launch_video_status with the returned jobId every 10-15 seconds.",
+      inputSchema: {
+        storyboard: storyboardShape.optional().describe("A storyboard from create_launch_storyboard, edited or not"),
+        productName: z.string().optional().describe("Required when no storyboard is given"),
+        description: z.string().optional().describe("Required when no storyboard is given"),
+        audience: z.string().optional(),
+        brandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+        tone: z.enum(tones).default("punchy"),
+        seconds: z.number().int().min(10).max(90).default(30),
+        format: z.enum(formats).default("landscape").describe("landscape 1920x1080, portrait 1080x1920, square 1080x1080"),
+        sound: z.boolean().default(true).describe("Add the voiceover and music"),
+        voice: z.enum(VOICES).optional(),
+      },
+      annotations: { openWorldHint: true },
+    },
+    async ({ storyboard, productName, description, audience, brandColor, ...options }) => {
+      if (!storyboard && !(productName?.trim() && description?.trim())) return fail("Pass a storyboard, or productName and description");
+      const job = startRender({
+        ...options,
+        storyboard: storyboard && ({ ...storyboard, brandColor: brandColor ?? storyboard.brandColor } as unknown as Storyboard),
+        product: productName && description ? { productName, description, audience, brandColor } : undefined,
+      });
+      return { content: [json({ jobId: job.id, stage: job.stage, next: "Call get_launch_video_status with this jobId until stage is done." })] };
+    },
+  );
+
+  server.registerTool(
+    "get_launch_video_status",
+    {
+      title: "Get launch video status",
+      description: "Checks a render started by render_launch_video. Stages: storyboard → sound → rendering → done. When done, returns the MP4 link.",
+      inputSchema: { jobId: z.string() },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ jobId }) => {
+      const job = getRenderJob(jobId);
+      if (!job) return fail("Unknown jobId — renders are kept for an hour on the server that started them");
+      return {
+        content: [
+          json({
+            stage: job.stage,
+            progress: Math.round(job.progress * 100),
+            ...(job.stage === "done" && { video: `${origin}/api/launch/render?id=${job.id}` }),
+            ...(job.error && { error: job.error }),
+            ...(job.warnings.length && { warnings: job.warnings }),
+            script: job.script,
+            storyboard: job.stage === "done" ? job.storyboard : undefined,
+          }),
+        ],
+        isError: job.stage === "error",
+      };
     },
   );
 

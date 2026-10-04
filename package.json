@@ -11,6 +11,8 @@
   "dependencies": {
     "@google/genai": "^2.27.0",
     "@modelcontextprotocol/sdk": "^1.32.0",
+    "@remotion/cli": "^4.0.532",
+    "@remotion/google-fonts": "^4.0.532",
     "@remotion/media": "4.0.532",
     "@remotion/player": "4.0.532",
     "@remotion/web-renderer": "4.0.532",
@@ -18,7 +20,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "remotion": "4.0.532",
-    "zod": "^4.6.5"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
