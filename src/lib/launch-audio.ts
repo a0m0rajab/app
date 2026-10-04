@@ -1,6 +1,7 @@
 import { Type } from "@google/genai";
 import { ai } from "@/lib/gemini";
 import { toTone, type Tone } from "@/lib/launch";
+import { BPM } from "@/remotion/tempo";
 import type { Storyboard } from "@/remotion/types";
 
 const model = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
@@ -98,7 +99,7 @@ export async function speak(text: string, tone: Tone, voice?: string): Promise<A
 export async function composeMusic(storyboard: Storyboard, tone: Tone): Promise<AudioClip> {
   const interaction = await ai.interactions.create({
     model: MUSIC_MODEL,
-    input: `Instrumental background music for a short product launch video for ${storyboard.productName}, a product that ${storyboard.tagline.replace(/\.$/, "").toLowerCase()}. ${VOICE_STYLE[tone].music}. No vocals, no lyrics. Sits under a voiceover, clean ending.`,
+    input: `Instrumental background music for a short product launch video for ${storyboard.productName}, a product that ${storyboard.tagline.replace(/\.$/, "").toLowerCase()}. ${VOICE_STYLE[tone].music}. Steady ${BPM} BPM in 4/4 with a clear downbeat from the first bar, so cuts land on the beat. No vocals, no lyrics. Sits under a voiceover, clean ending.`,
   });
   const audio = interaction.output_audio;
   if (!audio?.data) throw new Error("No music was returned");

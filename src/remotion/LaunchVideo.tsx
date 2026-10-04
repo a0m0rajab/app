@@ -1,37 +1,49 @@
 import type { ReactNode } from "react";
 import { Audio } from "@remotion/media";
-import { AbsoluteFill, Img, Sequence, Series, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
-import { AppScreen, countUp } from "./AppScreen";
-import type { Feature, LaunchVideoProps, Storyboard } from "./types";
+import { AbsoluteFill, Sequence, Series, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import { countUp } from "./AppScreen";
+import { Masked } from "./Kinetic";
+import { BEAT, EASE, FPS, lighten, tween } from "./motion";
+import { ProductTake } from "./ProductTake";
+import type { LaunchVideoProps, Storyboard } from "./types";
 
-export const FPS = 30;
+export { FPS };
 
-const INTRO = 90;
-const PROBLEM = 80;
-const FEATURE = 120;
-const STATS = 90;
-const CTA = 105;
+// Natural scene lengths, in beats of the music.
+const BEATS = { hook: 6, problem: 5, feature: 8, stats: 6, cta: 7 };
+const MIN_BEATS = 2;
 
-const FONT = "var(--font-geist-sans), Inter, Arial, sans-serif";
+const FONT = "var(--font-inter-tight), var(--font-geist-sans), Inter, Arial, sans-serif";
+const MONO = "var(--font-geist-mono), ui-monospace, monospace";
+const STAGE = "#09090b";
 
 export type TimelineScene = { key: string; label: string; from: number; duration: number };
 
-// Scene timings, optionally stretched or squeezed to hit a target length in seconds.
+// Scene timings, quantised to whole beats so every cut lands on the music, and fitted to a target length in seconds.
 export function launchTimeline(storyboard: Storyboard, seconds?: number): TimelineScene[] {
-  const natural = INTRO + PROBLEM + storyboard.features.length * FEATURE + STATS + CTA;
-  const scale = seconds ? (seconds * FPS) / natural : 1;
   const parts: [string, string, number][] = [
-    ["hook", "Hook", INTRO],
-    ["problem", "Problem", PROBLEM],
-    ...storyboard.features.map((f, i): [string, string, number] => [`feature-${i}`, f.title, FEATURE]),
-    ["stats", "Proof", STATS],
-    ["cta", storyboard.cta, CTA],
+    ["hook", "Hook", BEATS.hook],
+    ["problem", "Problem", BEATS.problem],
+    ...storyboard.features.map((f, i): [string, string, number] => [`feature-${i}`, f.title, BEATS.feature]),
+    ["stats", "Proof", BEATS.stats],
+    ["cta", storyboard.cta, BEATS.cta],
   ];
+  const natural = parts.reduce((sum, [, , b]) => sum + b, 0);
+  const target = seconds ? Math.max(parts.length * MIN_BEATS, Math.round((seconds * FPS) / BEAT)) : natural;
+  const ideal = parts.map(([, , b]) => (b * target) / natural);
+  const beats = ideal.map((v) => Math.max(MIN_BEATS, Math.floor(v)));
+  // Largest remainder: hand leftover beats to the scenes rounded down the most, or take them from the longest.
+  let left = target - beats.reduce((a, b) => a + b, 0);
+  const order = ideal.map((v, i) => [v - beats[i], i]).sort((a, b) => b[0] - a[0]);
+  for (let k = 0; left > 0; k++, left--) beats[order[k % order.length][1]]++;
+  while (left < 0) {
+    beats[beats.indexOf(Math.max(...beats))]--;
+    left++;
+  }
   let from = 0;
-  return parts.map(([key, label, frames]) => {
-    const duration = Math.round(frames * scale);
-    const scene = { key, label, from, duration };
-    from += duration;
+  return parts.map(([key, label], i) => {
+    const scene = { key, label, from, duration: beats[i] * BEAT };
+    from += scene.duration;
     return scene;
   });
 }
@@ -44,37 +56,40 @@ export function launchDuration(storyboard: Storyboard, seconds?: number) {
 export function LaunchVideo({ storyboard: s, seconds, audio }: LaunchVideoProps) {
   const timeline = launchTimeline(s, seconds);
   const frames = (key: string) => timeline.find((t) => t.key === key)!.duration;
+  const features = timeline.filter((t) => t.key.startsWith("feature-"));
+  const takeStart = features[0]?.from ?? 0;
+  const spans = features.map((t) => ({ from: t.from - takeStart, duration: t.duration }));
+  const takeLength = spans.reduce((sum, t) => sum + t.duration, 0);
+
   return (
-    <AbsoluteFill style={{ background: "#0a0a12", color: "#ffffff", fontFamily: FONT }}>
+    <AbsoluteFill style={{ background: STAGE, color: "#ffffff", fontFamily: FONT }}>
       <Backdrop color={s.brandColor} />
       <Soundtrack music={audio?.music} voiceover={audio?.voiceover} />
       <Series>
         <Series.Sequence durationInFrames={frames("hook")}>
-          <Scene duration={frames("hook")}>
+          <Cut duration={frames("hook")}>
             <Intro storyboard={s} />
-          </Scene>
+          </Cut>
         </Series.Sequence>
         <Series.Sequence durationInFrames={frames("problem")}>
-          <Scene duration={frames("problem")}>
-            <Problem text={s.problem} />
-          </Scene>
+          <Cut duration={frames("problem")}>
+            <Problem text={s.problem} accent={lighten(s.brandColor, 0.35)} />
+          </Cut>
         </Series.Sequence>
-        {s.features.map((feature, i) => (
-          <Series.Sequence key={i} durationInFrames={frames(`feature-${i}`)}>
-            <Scene duration={frames(`feature-${i}`)}>
-              <FeatureScene feature={feature} index={i} storyboard={s} />
-            </Scene>
+        {takeLength > 0 && (
+          <Series.Sequence durationInFrames={takeLength}>
+            <ProductTake storyboard={s} spans={spans} />
           </Series.Sequence>
-        ))}
+        )}
         <Series.Sequence durationInFrames={frames("stats")}>
-          <Scene duration={frames("stats")}>
+          <Cut duration={frames("stats")}>
             <Stats storyboard={s} />
-          </Scene>
+          </Cut>
         </Series.Sequence>
         <Series.Sequence durationInFrames={frames("cta")}>
-          <Scene duration={frames("cta")} fadeOut={false}>
+          <Cut duration={frames("cta")}>
             <Cta storyboard={s} />
-          </Scene>
+          </Cut>
         </Series.Sequence>
       </Series>
     </AbsoluteFill>
@@ -109,26 +124,16 @@ function usePortrait() {
   return height > width;
 }
 
-// Fades each scene in and out so cuts feel smooth.
-function Scene({ duration, fadeOut = true, children }: { duration: number; fadeOut?: boolean; children: ReactNode }) {
+// Scenes hard-cut on the beat: each one punches in slightly and keeps drifting closer, so nothing sits still.
+function Cut({ duration, children }: { duration: number; children: ReactNode }) {
   const frame = useCurrentFrame();
-  const opacity = interpolate(frame, fadeOut ? [0, 10, duration - 10, duration] : [0, 10], fadeOut ? [0, 1, 1, 0] : [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
-  return <AbsoluteFill style={{ opacity }}>{children}</AbsoluteFill>;
+  const scale = tween(frame, 0, 10, 1.035, 1) * tween(frame, 0, duration, 1, 1.03, EASE.linear);
+  return <AbsoluteFill style={{ transform: `scale(${scale})` }}>{children}</AbsoluteFill>;
 }
 
+// A flat stage with a faint wash of the brand colour from above.
 function Backdrop({ color }: { color: string }) {
-  const frame = useCurrentFrame();
-  const drift = Math.sin(frame / 60) * 80;
-  const blob = { position: "absolute" as const, width: 900, height: 900, borderRadius: "50%", filter: "blur(160px)" };
-  return (
-    <AbsoluteFill style={{ overflow: "hidden" }}>
-      <div style={{ ...blob, background: color, opacity: 0.35, left: -300 + drift, top: -350 }} />
-      <div style={{ ...blob, background: "#22d3ee", opacity: 0.12, right: -350 - drift, bottom: -400 }} />
-    </AbsoluteFill>
-  );
+  return <AbsoluteFill style={{ background: `linear-gradient(180deg, ${color}1f 0%, ${color}00 55%)` }} />;
 }
 
 function Logo({ storyboard, size }: { storyboard: Storyboard; size: number }) {
@@ -137,14 +142,14 @@ function Logo({ storyboard, size }: { storyboard: Storyboard; size: number }) {
       style={{
         width: size,
         height: size,
-        borderRadius: size * 0.26,
-        background: `linear-gradient(135deg, ${storyboard.brandColor}, ${storyboard.brandColor}99)`,
-        boxShadow: `0 20px 60px ${storyboard.brandColor}66`,
+        borderRadius: size * 0.24,
+        background: `linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0) 60%), ${storyboard.brandColor}`,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: size * 0.5,
+        fontSize: size * 0.52,
         fontWeight: 800,
+        letterSpacing: "-0.04em",
       }}
     >
       {storyboard.productName.charAt(0).toUpperCase()}
@@ -154,174 +159,67 @@ function Logo({ storyboard, size }: { storyboard: Storyboard; size: number }) {
 
 function Intro({ storyboard }: { storyboard: Storyboard }) {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
   const portrait = usePortrait();
-  const pop = spring({ frame, fps, config: { damping: 12 } });
-  const title = spring({ frame: frame - 12, fps, config: { damping: 200 } });
-  const tagline = spring({ frame: frame - 26, fps, config: { damping: 200 } });
+  const mark = tween(frame, 0, 14);
 
   return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", textAlign: "center", padding: 100, gap: 40 }}>
-      <div style={{ transform: `scale(${pop})` }}>
-        <Logo storyboard={storyboard} size={170} />
+    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", textAlign: "center", padding: 100, gap: 36 }}>
+      <div style={{ opacity: mark, transform: `scale(${0.8 + mark * 0.2}) rotate(${(1 - mark) * -8}deg)` }}>
+        <Logo storyboard={storyboard} size={portrait ? 120 : 104} />
       </div>
-      <div
-        style={{
-          fontSize: portrait ? 130 : 140,
-          fontWeight: 800,
-          letterSpacing: "-0.04em",
-          opacity: title,
-          transform: `translateY(${(1 - title) * 50}px)`,
-        }}
-      >
-        {storyboard.productName}
+      <div style={{ fontSize: portrait ? 150 : 176, fontWeight: 800, letterSpacing: "-0.05em", lineHeight: 1 }}>
+        <Masked text={storyboard.productName} frame={frame} start={4} stagger={1.2} duration={18} chars />
       </div>
-      <div style={{ fontSize: 50, maxWidth: 1300, lineHeight: 1.25, opacity: tagline * 0.8, transform: `translateY(${(1 - tagline) * 30}px)` }}>
-        {storyboard.tagline}
+      <div style={{ fontSize: portrait ? 46 : 44, maxWidth: portrait ? 900 : 1300, lineHeight: 1.3, color: "rgba(255,255,255,0.66)" }}>
+        <Masked text={storyboard.tagline} frame={frame} start={18} stagger={1.4} />
       </div>
     </AbsoluteFill>
   );
 }
 
-function Problem({ text }: { text: string }) {
+function Problem({ text, accent }: { text: string; accent: string }) {
   const frame = useCurrentFrame();
-  const words = text.split(" ");
-  return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", padding: 120 }}>
-      <div style={{ fontSize: 92, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em", textAlign: "center", maxWidth: 1500 }}>
-        {words.map((word, i) => {
-          const p = interpolate(frame - i * 3, [0, 10], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-          return (
-            <span key={i} style={{ display: "inline-block", marginRight: "0.25em", opacity: p, transform: `translateY(${(1 - p) * 30}px)` }}>
-              {word}
-            </span>
-          );
-        })}
-      </div>
-    </AbsoluteFill>
-  );
-}
-
-function BrowserFrame({ url, children }: { url: string; children: ReactNode }) {
-  return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        borderRadius: 18,
-        overflow: "hidden",
-        background: "#ffffff",
-        boxShadow: "0 40px 120px rgba(0,0,0,0.55)",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div style={{ height: 46, flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "0 18px", background: "#e2e8f0" }}>
-        {["#ef4444", "#f59e0b", "#22c55e"].map((c) => (
-          <div key={c} style={{ width: 13, height: 13, borderRadius: "50%", background: c }} />
-        ))}
-        <div style={{ marginLeft: 20, padding: "5px 18px", borderRadius: 8, background: "#ffffff", color: "#64748b", fontSize: 15 }}>{url}</div>
-      </div>
-      <div style={{ flex: 1, minHeight: 0, position: "relative" }}>{children}</div>
-    </div>
-  );
-}
-
-function FeatureScene({ feature, index, storyboard }: { feature: Feature; index: number; storyboard: Storyboard }) {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
   const portrait = usePortrait();
-  const text = spring({ frame, fps, config: { damping: 200 } });
-  const screen = spring({ frame: frame - 6, fps, config: { damping: 18, mass: 0.9 } });
-  const float = Math.sin(frame / 25) * 6;
-  const reverse = !portrait && index % 2 === 1;
-
+  const words = text.split(/\s+/).filter(Boolean).length;
+  // Land the words on a steady half-beat pulse, finishing well before the cut.
+  const stagger = Math.min(BEAT / 2, 40 / Math.max(words, 1));
   return (
-    <AbsoluteFill
-      style={{
-        flexDirection: portrait ? "column" : reverse ? "row-reverse" : "row",
-        alignItems: "center",
-        padding: portrait ? "160px 70px" : "100px 110px",
-        gap: portrait ? 70 : 90,
-      }}
-    >
-      <div
-        style={{
-          width: portrait ? "100%" : "34%",
-          flexShrink: 0,
-          opacity: text,
-          transform: `translateX(${(1 - text) * (reverse ? 60 : -60)}px)`,
-        }}
-      >
-        <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: "0.12em", color: storyboard.brandColor, filter: "brightness(1.4)" }}>
-          FEATURE {String(index + 1).padStart(2, "0")}
-        </div>
-        <div style={{ fontSize: 76, fontWeight: 800, lineHeight: 1.05, letterSpacing: "-0.03em", marginTop: 20 }}>{feature.title}</div>
-        <div style={{ fontSize: 36, lineHeight: 1.35, opacity: 0.7, marginTop: 26 }}>{feature.description}</div>
-      </div>
-
-      <div
-        style={{
-          flex: 1,
-          width: portrait ? "100%" : undefined,
-          height: portrait ? undefined : 760,
-          alignSelf: "stretch",
-          display: "flex",
-          alignItems: "center",
-          opacity: screen,
-          transform: `perspective(2200px) rotateY(${(1 - screen) * (reverse ? 22 : -22)}deg) translateX(${(1 - screen) * (reverse ? -160 : 160)}px) translateY(${float}px)`,
-        }}
-      >
-        <div style={{ width: "100%", height: portrait ? 900 : 760 }}>
-          <BrowserFrame url={`app.${storyboard.url.replace(/^https?:\/\//, "")}`}>
-            {feature.screenshot ? (
-              <Img src={feature.screenshot} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }} />
-            ) : (
-              <AppScreen
-                screen={feature.screen}
-                navItems={storyboard.navItems}
-                productName={storyboard.productName}
-                brandColor={storyboard.brandColor}
-                activeNav={(index + 1) % Math.max(storyboard.navItems.length, 1)}
-              />
-            )}
-          </BrowserFrame>
-        </div>
+    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", padding: portrait ? 80 : 140 }}>
+      <div style={{ fontSize: portrait ? 96 : 104, fontWeight: 800, lineHeight: 1.08, letterSpacing: "-0.035em", textAlign: "center", maxWidth: 1500 }}>
+        <Masked text={text} frame={frame} start={2} stagger={stagger} duration={10} colorAt={(i, n) => (i === n - 1 ? accent : undefined)} />
       </div>
     </AbsoluteFill>
   );
 }
 
+// One stat at a time, each a hard cut, counting up to its number.
 function Stats({ storyboard }: { storyboard: Storyboard }) {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { durationInFrames } = useVideoConfig();
   const portrait = usePortrait();
+  const stats = storyboard.stats;
+  if (!stats.length) return null;
+  const slot = durationInFrames / stats.length;
+  const index = Math.min(stats.length - 1, Math.floor(frame / slot));
+  const local = frame - index * slot;
+  const stat = stats[index];
+  // Start partway up so the first frame of each cut never reads as zero.
+  const count = tween(local, 0, slot * 0.7, 0.3, 1);
+  const bar = tween(local, 4, slot * 0.8, 0, 1, EASE.inOut);
 
   return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", padding: 100 }}>
-      <div style={{ display: "flex", flexDirection: portrait ? "column" : "row", gap: 50, width: "100%", maxWidth: 1600 }}>
-        {storyboard.stats.map((stat, i) => {
-          const enter = spring({ frame: frame - i * 8, fps, config: { damping: 200 } });
-          const count = interpolate(frame - i * 8, [0, 45], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-          return (
-            <div
-              key={i}
-              style={{
-                flex: 1,
-                padding: "56px 40px",
-                borderRadius: 28,
-                textAlign: "center",
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                opacity: enter,
-                transform: `translateY(${(1 - enter) * 60}px)`,
-              }}
-            >
-              <div style={{ fontSize: 110, fontWeight: 800, letterSpacing: "-0.04em" }}>{countUp(stat.value, 1 - Math.pow(1 - count, 3))}</div>
-              <div style={{ fontSize: 34, opacity: 0.7, marginTop: 10 }}>{stat.label}</div>
-            </div>
-          );
-        })}
+    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+      <div style={{ fontFamily: MONO, fontSize: 24, letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)", marginBottom: 28 }}>
+        {String(index + 1).padStart(2, "0")} / {String(stats.length).padStart(2, "0")}
+      </div>
+      <div style={{ fontSize: portrait ? 230 : 280, fontWeight: 800, letterSpacing: "-0.06em", lineHeight: 0.95, fontVariantNumeric: "tabular-nums" }}>
+        {countUp(stat.value, count)}
+      </div>
+      <div style={{ width: 420, height: 6, borderRadius: 3, background: "rgba(255,255,255,0.1)", marginTop: 40, overflow: "hidden" }}>
+        <div style={{ width: `${bar * 100}%`, height: "100%", background: lighten(storyboard.brandColor, 0.2) }} />
+      </div>
+      <div style={{ fontSize: portrait ? 50 : 48, color: "rgba(255,255,255,0.72)", marginTop: 36 }}>
+        <Masked key={index} text={stat.label} frame={local} start={3} stagger={1.5} />
       </div>
     </AbsoluteFill>
   );
@@ -329,31 +227,37 @@ function Stats({ storyboard }: { storyboard: Storyboard }) {
 
 function Cta({ storyboard }: { storyboard: Storyboard }) {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const enter = spring({ frame, fps, config: { damping: 14 } });
-  const button = spring({ frame: frame - 18, fps, config: { damping: 12 } });
-  const pulse = 1 + Math.sin(frame / 8) * 0.025 * Math.min(1, Math.max(0, (frame - 35) / 10));
+  const portrait = usePortrait();
+  const lockup = tween(frame, 0, 16);
+  const pill = tween(frame, 14, 28);
+  const url = storyboard.url.replace(/^https?:\/\//, "");
+  // The address types itself out, with a caret blinking on the beat.
+  const typed = Math.floor(tween(frame, 20, 20 + url.length * 1.4, 0, url.length, EASE.linear));
+  const caret = Math.floor(frame / (BEAT / 2)) % 2 === 0;
 
   return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", textAlign: "center", padding: 100, gap: 50 }}>
-      <div style={{ transform: `scale(${enter})` }}>
-        <Logo storyboard={storyboard} size={130} />
+    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", textAlign: "center", padding: 100, gap: 54 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 22, opacity: lockup, transform: `translateY(${(1 - lockup) * 20}px)` }}>
+        <Logo storyboard={storyboard} size={76} />
+        <span style={{ fontSize: 56, fontWeight: 800, letterSpacing: "-0.04em" }}>{storyboard.productName}</span>
       </div>
-      <div style={{ fontSize: 100, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.1, maxWidth: 1500, opacity: enter }}>
-        {storyboard.cta}
+      <div style={{ fontSize: portrait ? 96 : 112, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.04, maxWidth: 1500 }}>
+        <Masked text={storyboard.cta} frame={frame} start={6} stagger={1.8} />
       </div>
       <div
         style={{
-          padding: "28px 64px",
+          fontFamily: MONO,
+          fontSize: 40,
+          padding: "22px 44px",
           borderRadius: 999,
-          fontSize: 46,
-          fontWeight: 700,
-          background: storyboard.brandColor,
-          boxShadow: `0 20px 60px ${storyboard.brandColor}80`,
-          transform: `scale(${button * pulse})`,
+          background: "#ffffff",
+          color: STAGE,
+          opacity: pill,
+          transform: `scale(${0.92 + pill * 0.08})`,
         }}
       >
-        {storyboard.url}
+        {url.slice(0, typed)}
+        <span style={{ display: "inline-block", width: 3, height: "1em", marginLeft: 4, verticalAlign: "-0.12em", background: storyboard.brandColor, opacity: caret ? 1 : 0 }} />
       </div>
     </AbsoluteFill>
   );
